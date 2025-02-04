@@ -9,7 +9,7 @@ while maintaining efficiency in memory-constrained environments.
 
 **SLiM: One-shot Quantized Sparse Plus Low-rank Approximation of LLMs**
 
-*Mohammad Mozaffari and Maryam Mehri Dehnavi*
+*Mohammad Mozaffari, Amir Yazdanbakhsh, and Maryam Mehri Dehnavi*
 
 Paper: [https://arxiv.org/abs/2410.09615](https://arxiv.org/abs/2410.09615)
 
@@ -18,7 +18,7 @@ We are excited to share our code with the community and are working on preparing
 
 
 ## Citation
-If you use SLoPe in your research, please cite our paper:
+If you use SLiM in your research, please cite our paper:
 ```angular2html
 @article{slim:2024,
     title        = {{SLiM: One-shot Quantized Sparse Plus Low-rank Approximation of LLMs}},
