@@ -10,6 +10,8 @@ from slim.quantization.quantization import Quantizer as AutoQuantizer, Quantized
 import tqdm.auto as tqdm
 from .jsq_utils import clip_matrix, generate_ss
 from .smooth import smooth_layer
+from huggingface_hub import hf_hub_download
+import numpy as np
 
 
 def prepare_calibration_input(
@@ -255,7 +257,11 @@ def prune_wanda(
 
             W_mask = (torch.zeros_like(W_metric) == 1)  ## initialize a mask to be all False
             if prune_n != 0:
-                W_mask = prune_nm(W_metric, prune_n, prune_m)
+                if hasattr(subset[name].weight, 'mask'):
+                    W_mask = subset[name].weight.mask
+                    del subset[name].weight.mask
+                else:
+                    W_mask = prune_nm(W_metric, prune_n, prune_m)
             else:
                 sort_res = torch.sort(W_metric, dim=-1, stable=True)
 
@@ -631,6 +637,11 @@ def joint_pq(
 
         for j in range(nsamples):
             with torch.no_grad():
+                for key in kwargs:
+                    if isinstance(kwargs[key], torch.Tensor):
+                        kwargs[key] = kwargs[key].cuda()
+                    if isinstance(kwargs[key], tuple):
+                        kwargs[key] = tuple([k.cuda() for k in kwargs[key]])
                 outs[j] = layer(inps[j].unsqueeze(0).cuda(), **kwargs)[0].to(outs.device)
         for h in handles:
             h.remove()
@@ -661,6 +672,11 @@ def joint_pq(
 
         for j in range(nsamples):
             with torch.no_grad():
+                for key in kwargs:
+                    if isinstance(kwargs[key], torch.Tensor):
+                        kwargs[key] = kwargs[key].cuda()
+                    if isinstance(kwargs[key], tuple):
+                        kwargs[key] = tuple([k.cuda() for k in kwargs[key]])
                 outs[j] = layer(inps[j].unsqueeze(0).cuda(), **kwargs)[0].to(outs.device)
 
         progress_bar.set_description(f"Layer {i} - Smoothing {name}")
@@ -756,6 +772,7 @@ def prune_and_quantize(
         calibration_dataset="c4",
         pad_lora=False,
         scale_important_weights=False,
+        mask_checkpoint=None,
 ):
     """
     Prune and quantize a model and add low-rank adapter to it.
@@ -783,7 +800,8 @@ def prune_and_quantize(
         joint_pq_mixing_factor: float - The mixing factor for joint pruning and quantization
         calibration_dataset: str - The dataset to use for calibration
         pad_lora: bool - Whether to pad the low-rank adapter to the quantization tile size (whithout quantizing)
-        scale_important_weights: bool - Whether to scale the important weights before quantization
+        scale_important_weights: bool - Whether to scale the important weights before quantization,
+        mask_checkpoint: str - The checkpoint to use for MaskLLM pruning
 
     Returns:
         None
@@ -812,7 +830,11 @@ def prune_and_quantize(
             prune_n = prune_m - prune_n
             assert sparsity_ratio == prune_n / prune_m, \
                 f"Sparsity ratio must be {prune_n / prune_m} for structured N:M sparsity"
-        if prune_method == "wanda":
+        if prune_method in ["wanda", "maskllm"]:
+            if prune_method == "wanda":
+                pruning_name = "Wanda"
+            else:
+                pruning_name = "MaskLLM"
             if quantize_weight:
                 if slim_quant:
                     quantization_method = "SLiM-Quant"
@@ -821,16 +843,31 @@ def prune_and_quantize(
                         quantization_method = "Tiled Group AbsMax"
                     else:
                         quantization_method = "AbsMax"
-                print(F"Pruning the model with Wanda and quantizing the weights using {quantization_method}.")
+                print(F"Pruning the model with {pruning_name} and quantizing the weights using {quantization_method}.")
             else:
-                print("Pruning the model with Wanda.")
+                print(f"Pruning the model with {pruning_name}.")
             if lora_rank > 0:
                 if slim_lora:
                     print(f"Adding SLiM-LoRA approximation with rank ratio {lora_rank}.")
                 else:
-                    print(f"Adding SVD LoRA approximation with rank ratio {lora_rank}.")
+                    print(f"Adding Naive-LoRA approximation with rank ratio {lora_rank}.")
             if prune_lora and not (prune_n == 2 and prune_m == 4):
                 raise NotImplementedError("Pruning LoRA is only supported for 2:4 sparsity ratio")
+            if prune_method == "maskllm":
+                assert mask_checkpoint is not None, "Mask checkpoint must be provided for MaskLLM pruning"
+                assert prune_n == 2 and prune_m == 4, "MaskLLM pruning only supports 2:4 sparsity ratio"
+                try:
+                    downloaded_mask = hf_hub_download(repo_id=mask_checkpoint, filename="mask_compressed.npz")
+                    mask_ckpt = np.load(downloaded_mask)
+                    for k, v in mask_ckpt.items():
+                        k_original = k.replace(".mask", "")
+                        v = np.unpackbits(v)  # to bits
+                        mask = torch.from_numpy(v).float()
+                        param = dict(model.named_parameters()).get(k_original, None)
+                        mask = mask.view(*param.shape)
+                        param.mask = (mask == 0).bool()
+                except FileNotFoundError:
+                    raise FileNotFoundError("Mask checkpoint not found. Please provide a valid checkpoint.")
             prune_wanda(
                 model,
                 tokenizer,
