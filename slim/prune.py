@@ -1083,35 +1083,33 @@ def prune_and_quantize(
             )
 			
         elif prune_method == "pruner_zero":
-		    if quantize_weight:
-		        if slim_quant:
-		            quantization_method = "SLiM-Quant"
-		        else:
-		            if weight_tiled_quantization:
-		                quantization_method = "Tiled Group AbsMax"
-		            else:
-		                quantization_method = "AbsMax"
-		         print(F"Pruning the model with Pruner Zero "
-		                F"and quantizing the weights using {quantization_method}.")
-		    else:
-		        print("Pruning the model with Pruner Zero.")
-    
-		    prune_pruner_zero(
-		        model=model,
-		        tokenizer=tokenizer,
-		        device=device,
-		        prune_n=prune_n,
-		        prune_m=prune_m,
-		        seed=seed,
-		        nsamples=nsamples,
-		        sparsity_ratio=sparsity_ratio,
-		        quantize_weight=quantize_weight,
-		        bitwidth=bitwidth,
-		        tiled_weight_quantization=weight_tiled_quantization,
-		        weight_tile_size=weight_tile_size,
-		        slim_quant=slim_quant,
-		        gradient_path=gradient_path
-		    )
+            if quantize_weight:
+                if slim_quant:
+                    quantization_method = "SLiM-Quant"
+                else:
+                    if weight_tiled_quantization:
+                        quantization_method = "Tiled Group AbsMax"
+                    else:
+                        quantization_method = "AbsMax"
+                print(F"Pruning the model with Pruner Zero "
+                      F"and quantizing the weights using {quantization_method}.")
+            else:
+                print("Pruning the model with Pruner Zero.")
+
+            prune_pruner_zero(
+                model=model,
+                tokenizer=tokenizer,
+                prune_n=prune_n,
+                prune_m=prune_m,
+                seed=seed,
+                nsamples=nsamples,
+                sparsity_ratio=sparsity_ratio,
+                quantize_weight=quantize_weight,
+                bitwidth=bitwidth,
+                tiled_weight_quantization=weight_tiled_quantization,
+                weight_tile_size=weight_tile_size,
+                slim_quant=slim_quant,
+            )
 		    	
         elif prune_method == "sparsegpt":
             if scale_important_weights and quantize_weight:
