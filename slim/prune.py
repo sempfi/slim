@@ -1082,7 +1082,7 @@ def prune_and_quantize(
                 weight_tile_size,
             )
 			
-		elif prune_method == "pruner_zero":
+        elif prune_method == "pruner_zero":
 		    if quantize_weight:
 		        if slim_quant:
 		            quantization_method = "SLiM-Quant"
