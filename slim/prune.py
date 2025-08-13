@@ -1095,7 +1095,7 @@ def prune_and_quantize(
 		                F"and quantizing the weights using {quantization_method}.")
 		    else:
 		        print("Pruning the model with Pruner Zero.")
-		    
+    
 		    prune_pruner_zero(
 		        model=model,
 		        tokenizer=tokenizer,
@@ -1112,9 +1112,7 @@ def prune_and_quantize(
 		        slim_quant=slim_quant,
 		        gradient_path=gradient_path
 		    )
-
-		
-				
+		    	
         elif prune_method == "sparsegpt":
             if scale_important_weights and quantize_weight:
                 raise NotImplementedError("Scaling important weights not implemented for magnitude pruning and "
