@@ -538,7 +538,7 @@ def prune_pruner_zero(
     model.config.use_cache = False
 
     print("loading calibdation data")
-    dataloader, _ = get_loaders("c4", nsamples=nsamples, seed=seed, seqlen=model.seqlen, tokenizer=tokenizer)
+    dataloader, _ = get_loaders("c4", nsamples=nsamples, seed=seed, seqlen=model.model.config.max_position_embeddings, tokenizer=tokenizer)
     print("dataset loading complete")
     with torch.no_grad():
         inps, outs, attention_mask, position_ids = prepare_calibration_input(model, dataloader, device)
