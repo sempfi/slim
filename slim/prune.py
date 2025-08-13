@@ -537,17 +537,6 @@ def prune_pruner_zero(
     use_cache = model.config.use_cache
     model.config.use_cache = False
 
-    if slim_quant and quantize_weight:
-        # Assuming this is an unsupported combination based on previous discussions
-        raise NotImplementedError("SLiM-Quant is not supported for Pruner Zero with this quantizer.")
-
-    if gradient_path is None:
-        raise ValueError("gradient_path must be provided for PrunerZero.")
-
-    with open(gradient_path, 'rb') as file:
-        gradients = torch.load(
-            gradient_path, map_location=torch.device('cpu'))
-
     print("loading calibdation data")
     dataloader, _ = get_loaders("c4", nsamples=nsamples, seed=seed, seqlen=model.config.max_position_embeddings, tokenizer=tokenizer)
     print("dataset loading complete")
