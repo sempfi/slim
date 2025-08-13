@@ -1091,7 +1091,7 @@ def prune_and_quantize(
 		                quantization_method = "Tiled Group AbsMax"
 		            else:
 		                quantization_method = "AbsMax"
-		        print(F"Pruning the model with Pruner Zero "
+		         print(F"Pruning the model with Pruner Zero "
 		                F"and quantizing the weights using {quantization_method}.")
 		    else:
 		        print("Pruning the model with Pruner Zero.")
