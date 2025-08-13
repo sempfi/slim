@@ -537,10 +537,6 @@ def prune_pruner_zero(
     use_cache = model.config.use_cache
     model.config.use_cache = False
 
-    with open(gradient_path, 'rb') as file:
-        gradients = torch.load(
-            gradient_path, map_location=torch.device('cpu'))
-
     print("loading calibdation data")
     dataloader, _ = get_loaders("c4", nsamples=nsamples, seed=seed, seqlen=model.seqlen, tokenizer=tokenizer)
     print("dataset loading complete")
