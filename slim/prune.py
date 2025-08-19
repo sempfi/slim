@@ -6,6 +6,7 @@ from .layerwrapper import WrappedGPT
 from .data import get_loaders
 from .utils import get_layers_list, shift_zeros, find_layers, prune_nm
 from .lora import add_lora
+from .gptree import GPTree
 from slim.quantization.quantization import Quantizer as AutoQuantizer, QuantizedMatmul
 import tqdm.auto as tqdm
 from .jsq_utils import clip_matrix, generate_ss
