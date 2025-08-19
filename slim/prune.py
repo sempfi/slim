@@ -545,8 +545,8 @@ def prune_pruner_zero(
 	with torch.no_grad():
 		inps, outs, kwargs = prepare_calibration_input(model, dataloader, nsamples)
 	
-	with open(args.gradient_path, 'rb') as file:
-		gradients = torch.load(args.gradient_path, map_location=torch.device(device))
+	with open(gradient_path, 'rb') as file:
+		gradients = torch.load(gradient_path, map_location=torch.device(device))
 
 	
 	layers = get_layers_list(model)
