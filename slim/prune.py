@@ -507,7 +507,7 @@ def prune_pruner_zero(
 	tiled_weight_quantization=False,
 	weight_tile_size=256,
 	slim_quant=False,
-	gradient_path="/content/gradients/opt"
+	gradient_path="/content/gradients/opt/gradients_aggregate_norm_l2_opt-125m.path"
 ):
 	"""
 	Prunes a model using the PrunerZero method and optionally quantizes its weights.
