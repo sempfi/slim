@@ -545,7 +545,7 @@ def prune_pruner_zero(
     with torch.no_grad():
         inps, outs, kwargs = prepare_calibration_input(model, dataloader, nsamples)
     
-    layers = model.layers
+    layers = get_layers_list(model)
     
     progress_bar = tqdm.tqdm(range(len(layers)))
 
