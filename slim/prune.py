@@ -1193,6 +1193,7 @@ def prune_and_quantize(
 		pad_lora=False,
 		scale_important_weights=False,
 		mask_checkpoint=None,
+		quantize_first=True,
 ):
 	"""
 	Prune and quantize a model and add low-rank adapter to it.
@@ -1312,7 +1313,8 @@ def prune_and_quantize(
 					seed=seed,
 					calibration_dataset=calibration_dataset,
 					pad_lora=pad_lora,
-					scale_important_weights=scale_important_weights
+					scale_important_weights=scale_important_weights,
+					quantize_first=quantize_first
 				)
 			else:
 				prune_wanda(
@@ -1337,7 +1339,8 @@ def prune_and_quantize(
 					seed,
 					calibration_dataset,
 					pad_lora,
-					scale_important_weights=scale_important_weights
+					scale_important_weights=scale_important_weights,
+					quantize_first=quantize_first
 				)
 		elif prune_method == "magnitude":
 			if scale_important_weights and quantize_weight:
