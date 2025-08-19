@@ -556,10 +556,10 @@ def prune_pruner_zero(
 
         # if f"model.layers.{i}" in model.hf_device_map:
         #     dev = model.hf_device_map[f"model.layers.{i}"]
-        #     inps, outs = inps.to(dev), outs.to(dev)
-        #     for key in kwargs:
-        #         if isinstance(kwargs[key], torch.Tensor):
-        #             kwargs[key] = kwargs[key].to(dev)
+        inps, outs = inps.to(device), outs.to(device)
+        for key in kwargs:
+        	if isinstance(kwargs[key], torch.Tensor):
+        		kwargs[key] = kwargs[key].to(device)
 
         wrapped_layers = {}
         for name in subset:
