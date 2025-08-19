@@ -792,6 +792,7 @@ def prune_pruner_zero_2(
 				W_metric = engine.forward(
                 	W.to(dtype=torch.float32),
                 	G.to(device=W.device, dtype=torch.float32),
+					X=None
             	)			
 
 			W_mask = (torch.zeros_like(W_metric) == 1)
