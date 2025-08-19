@@ -640,6 +640,270 @@ def prune_pruner_zero(
 	model.config.use_cache = use_cache
 	torch.cuda.empty_cache()
 
+def prune_pruner_zero_2(
+	model,
+	tokenizer,
+	sparsity_ratio=0.5,
+	prune_n=0,
+	prune_m=0,
+	quantize_weight=False,
+	bitwidth=4,
+	slim_quant=False,
+	tiled_weight_quantization=False,
+	weight_tile_size=256,
+	shift_zero_metrics=True,
+	lora_rank=0.,
+	slim_lora=True,
+	prune_lora=False,
+	quantize_lora=False,
+	lora_tile_size=256,
+	separate_lora=True,
+	nsamples=128,
+	seed=0,
+	calibration_dataset="c4",
+	pad_lora=False,
+	quantize_first=True,
+	scale_important_weights=False,
+	sparsity_type="unstructured",
+	cache_dir="llm_weights",
+	eval_zero_shot=False,	
+	gradient_path="/content/gradients/opt/gradients_aggregate_norm_l2_opt-125m.path",
+	device=torch.device("cuda:0"),
+	engine=GPTree.load_tree('./data/best_tree.json')
+):
+	"""
+	Prunes a model using the PrunerZero method and optionally quantizes its weights.
+
+	Args:
+		model: The model to prune.
+		tokenizer: The tokenizer for the model.
+		device: The device to use for computation.
+		prune_n: The N in N:M structured sparsity.
+		prune_m: The M in N:M structured sparsity.
+		seed: The seed for sampling calibration data.
+		nsamples: The number of calibration samples.
+		sparsity_ratio: The target sparsity level (0.0 to 1.0).
+		sparsity_type: The type of sparsity, either "unstructured" or "n:m".
+		cache_dir: Directory to cache model weights.
+		eval_zero_shot: Whether to perform zero-shot evaluation.
+		quantize_weight: Whether to quantize weights after pruning.
+		bitwidth: The bitwidth to use for quantization.
+		tiled_weight_quantization: Whether to use block quantization.
+		weight_tile_size: The size of the blocks for block quantization.
+		slim_quant: Whether to use SLiM-Quant quantization.
+		gradient_path: Path to the pre-computed gradients.
+
+	Returns:
+		None
+	"""
+	use_cache = model.config.use_cache
+	model.config.use_cache = False
+
+	dataloader, _ = get_loaders(
+		calibration_dataset, 
+		nsamples=nsamples, 
+		seed=seed, 
+		seqlen=model.config.max_position_embeddings, 
+		tokenizer=tokenizer
+	)
+
+	with torch.no_grad():
+		inps, outs, kwargs = prepare_calibration_input(model, dataloader, nsamples)
+	
+	with open(gradient_path, 'rb') as file:
+		gradients = torch.load(gradient_path, map_location=torch.device(device))
+
+	if quantize_weight:
+		quantizer = AutoQuantizer(
+			"weight",
+			num_bits=bitwidth,
+			slim_quant=slim_quant,
+			block_quantization=tiled_weight_quantization,
+			block_dim=weight_tile_size,
+		)
+	else:
+		quantizer = None
+	
+	layers = get_layers_list(model)
+	
+	progress_bar = tqdm.tqdm(range(len(layers)))
+
+	for i in progress_bar:
+		progress_bar.set_description(f"Layer {i} - Gathering data")
+		layer = layers[i].cuda()
+		model = model.to(device)
+		inps, outs = inps.to(device), outs.to(device)
+		for key in kwargs:
+			if isinstance(kwargs[key], torch.Tensor):
+				kwargs[key] = kwargs[key].to(device)
+
+		
+		subset = find_layers(layer)
+		wrapped_layers = {}
+		for name in subset:
+			wrapped_layers[name] = WrappedGPT(subset[name])
+			# if quantize_weight:
+			#	if slim_quant:
+			#		wrapped_layers[name].quantizer = WandaQuantizer(
+			#			bitwidth=bitwidth, tiled_quant=tiled_weight_quantization,
+			#			tile_size=weight_tile_size, slim_quant=slim_quant
+			#		)
+			#	else:
+			#		wrapped_layers[name].quantizer = WandaQuantizer(
+			#			bitwidth=bitwidth, tiled_quant=tiled_weight_quantization,
+			#			tile_size=weight_tile_size
+			#		)
+
+		def add_batch(name):
+			def tmp(_, inp, out):
+				wrapped_layers[name].add_batch(inp[0].data, out.data)
+			return tmp
+
+		handles = []
+		for name in wrapped_layers:
+			handles.append(subset[name].register_forward_hook(add_batch(name)))
+		
+		for j in range(nsamples):
+			with torch.no_grad():
+				outs[j] = layer(inps[j].unsqueeze(0), attention_mask=kwargs)[0]
+		
+		for h in handles:
+			h.remove()
+
+		for name in subset:
+			indexed_name = f'{name}_layer_{i}'
+			progress_bar.set_description(f"Layer {indexed_name} - Pruning and Quantizing")
+			
+			W = torch.abs(subset[name].weight.data)
+			X = wrapped_layers[name].scaler_row.reshape((1,-1))
+			G = gradients[indexed_name]
+
+			is_model_opt = True
+
+			if is_model_opt == False:
+				W_metric = engine.forward(
+					W.to(dtype=torch.float32),
+					G.to(device=W.device, dtype=torch.float32),
+					X.to(device=W.device, dtype=torch.float32),
+				)
+				assert W_metric is not None
+			else:
+				W_metric = engine.forward(
+                	W.to(dtype=torch.float32),
+                	G.to(device=W.device, dtype=torch.float32),
+            	)			
+
+			W_mask = (torch.zeros_like(W_metric) == 1)
+			if prune_n != 0:
+				for ii in range(W_metric.shape[1]):
+					if ii % prune_m == 0:
+						tmp = W_metric[:,ii:(ii+prune_m)].float()
+						W_mask.scatter_(1, ii + torch.topk(tmp, prune_n, dim=1, largest=False)[1], True)
+			else:
+				sort_res = torch.sort(W_metric, dim=-1, stable=True)
+				indices = sort_res[1][:,:int(W_metric.shape[1]*sparsity_ratio)]
+				W_mask.scatter_(1, indices, True)
+
+			if lora_rank > 0.:
+				lora_tile_size = lora_tile_size if (quantize_lora or pad_lora) else None
+				add_lora(subset[name],
+						 W_mask=W_mask,
+						 rank_ratio=lora_rank,
+						 slim_lora=slim_lora,
+						 activations=wrapped_layers[name],
+						 quantizer=quantizer,
+						 prune_lora=prune_lora,
+						 separate_lora=separate_lora,
+						 lora_tile_size=lora_tile_size,
+						 quantize_first=quantize_first,
+						 scale_important_weights=scale_important_weights
+						 )
+
+				if quantizer is not None:
+					if not tiled_weight_quantization:
+						subset[name].scaling_factor = quantizer.scaling_factor
+					else:
+						subset[name].scaling_factor = None
+
+				if separate_lora:
+					def add_lora_hook(module, input, output):
+						if hasattr(module, "lora_quantizer"):
+							xl = QuantizedMatmul.apply(
+								input[0].to(module.lora_left.dtype) / torch.sqrt(module.lora_rank),
+								module.lora_left,
+								module.lora_quantizer
+							)
+							xlr = QuantizedMatmul.apply(
+								xl / torch.sqrt(module.lora_rank),
+								module.lora_right,
+								module.lora_quantizer
+							)
+							output += xlr
+
+						else:
+							output += torch.matmul(
+								torch.matmul(input[0].to(module.lora_left.dtype),
+											 module.lora_left / torch.sqrt(module.lora_rank)),
+								module.lora_right / torch.sqrt(module.lora_rank))
+
+
+					subset[name].lora_rank = torch.tensor(subset[name].lora_left.shape[1])
+					subset[name].lora_left = torch.nn.Parameter(subset[name].lora_left * torch.sqrt(subset[name].lora_rank))
+					subset[name].lora_right = torch.nn.Parameter(subset[name].lora_right * torch.sqrt(subset[name].lora_rank))
+					subset[name].register_forward_hook(add_lora_hook)
+
+
+			else:
+				if scale_important_weights:
+					# Get 1% of largest activations
+					metric = subset[name].scaler_row * subset[name].weight.data.abs().sum(dim=0)
+					important_weights = metric.topk(
+						int(0.01 * metric.numel()), largest=True, sorted=False)[1]
+				else:
+					important_weights = None
+				if quantize_first:
+					if quantizer is not None:
+						quantized_weight = quantizer.quantize_weight(subset[name].weight.data, important_weights)
+						subset[name].weight.data = quantizer.dequantize_absmax(quantized_weight).to(torch.bfloat16)
+						if quantizer is not None:
+							if not tiled_weight_quantization:
+								subset[name].scaling_factor = quantizer.scaling_factor
+							else:
+								subset[name].scaling_factor = None
+					subset[name].weight.data[W_mask] = 0  ## set weights to zero
+				else:
+					subset[name].weight.data[W_mask] = 0  ## set weights to zero
+					if quantizer is not None:
+						quantized_weight = quantizer.quantize_weight(subset[name].weight.data, important_weights)
+						subset[name].weight.data = quantizer.dequantize_absmax(quantized_weight).to(torch.bfloat16)
+						if quantizer is not None:
+							if not tiled_weight_quantization:
+								subset[name].scaling_factor = quantizer.scaling_factor
+							else:
+								subset[name].scaling_factor = None
+
+			# if quantize_weight:
+			#	wrapped_layers[name].quantizer.quantize_and_dequantize(subset[name])
+			#	wrapped_layers[name].free()
+
+		progress_bar.set_description(f"Layer {i} - Evaluating Output")
+		for j in range(nsamples):
+			with torch.no_grad():
+				outs[j] = layer(inps[j].unsqueeze(0), attention_mask=kwargs)[0]
+		
+		layers[i] = layer
+		torch.cuda.empty_cache()
+
+		inps, outs = outs, inps
+		
+		layers[i] = layer.cpu()
+		del layer
+		torch.cuda.empty_cache()
+
+	model.config.use_cache = use_cache
+	torch.cuda.empty_cache()
+
+
 def quantize_model(
 	   model,
 	   bitwidth=4,
@@ -1090,7 +1354,7 @@ def prune_and_quantize(
 			else:
 				print("Pruning the model with Pruner Zero.")
 
-			prune_pruner_zero(
+			prune_pruner_zero_2(
 				model=model,
 				tokenizer=tokenizer,
 				prune_n=prune_n,
