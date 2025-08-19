@@ -1250,9 +1250,11 @@ def prune_and_quantize(
 			prune_n = prune_m - prune_n
 			assert sparsity_ratio == prune_n / prune_m, \
 				f"Sparsity ratio must be {prune_n / prune_m} for structured N:M sparsity"
-		if prune_method in ["wanda", "maskllm"]:
+		if prune_method in ["wanda", "maskllm", "pruner_zero"]:
 			if prune_method == "wanda":
 				pruning_name = "Wanda"
+			elif prune_method == "pruner_zero":
+				pruning_name = "PrunerZero"
 			else:
 				pruning_name = "MaskLLM"
 			if quantize_weight:
@@ -1288,30 +1290,55 @@ def prune_and_quantize(
 						param.mask = (mask == 0).bool()
 				except FileNotFoundError:
 					raise FileNotFoundError("Mask checkpoint not found. Please provide a valid checkpoint.")
-			prune_wanda(
-				model,
-				tokenizer,
-				sparsity_ratio,
-				prune_n,
-				prune_m,
-				quantize_weight,
-				bitwidth,
-				slim_quant,
-				weight_tiled_quantization,
-				weight_tile_size,
-				shift_zero_metrics,
-				lora_rank,
-				slim_lora,
-				prune_lora,
-				quantize_lora,
-				lora_tile_size,
-				separate_lora,
-				nsamples,
-				seed,
-				calibration_dataset,
-				pad_lora,
-				scale_important_weights=scale_important_weights
-			)
+			if prune_method == "pruner_zero":
+				prune_pruner_zero_2(
+					model=model,
+					tokenizer=tokenizer,
+					sparsity_ratio=sparsity_ratio,
+					prune_n=prune_n,
+					prune_m=prune_m,
+					quantize_weight=quantize_weight,
+					bitwidth=bitwidth,
+					slim_quant=slim_quant,
+					tiled_weight_quantization=weight_tiled_quantization,
+					weight_tile_size=weight_tile_size,
+					lora_rank=lora_rank,
+					slim_lora=slim_lora,
+					prune_lora=prune_lora,
+					quantize_lora=quantize_lora,
+					lora_tile_size=lora_tile_size,
+					separate_lora=separate_lora,
+					nsamples=nsamples,
+					seed=seed,
+					calibration_dataset=calibration_dataset,
+					pad_lora=pad_lora,
+					scale_important_weights=scale_important_weights
+				)
+			else:
+				prune_wanda(
+					model,
+					tokenizer,
+					sparsity_ratio,
+					prune_n,
+					prune_m,
+					quantize_weight,
+					bitwidth,
+					slim_quant,
+					weight_tiled_quantization,
+					weight_tile_size,
+					shift_zero_metrics,
+					lora_rank,
+					slim_lora,
+					prune_lora,
+					quantize_lora,
+					lora_tile_size,
+					separate_lora,
+					nsamples,
+					seed,
+					calibration_dataset,
+					pad_lora,
+					scale_important_weights=scale_important_weights
+				)
 		elif prune_method == "magnitude":
 			if scale_important_weights and quantize_weight:
 				raise NotImplementedError("Scaling important weights not implemented for magnitude pruning and "
@@ -1340,35 +1367,6 @@ def prune_and_quantize(
 				slim_quant,
 				weight_tiled_quantization,
 				weight_tile_size,
-			)
-			
-		elif prune_method == "pruner_zero":
-			if quantize_weight:
-				if slim_quant:
-					quantization_method = "SLiM-Quant"
-				else:
-					if weight_tiled_quantization:
-						quantization_method = "Tiled Group AbsMax"
-					else:
-						quantization_method = "AbsMax"
-				print(F"Pruning the model with Pruner Zero "
-					  F"and quantizing the weights using {quantization_method}.")
-			else:
-				print("Pruning the model with Pruner Zero.")
-
-			prune_pruner_zero_2(
-				model=model,
-				tokenizer=tokenizer,
-				prune_n=prune_n,
-				prune_m=prune_m,
-				seed=seed,
-				nsamples=nsamples,
-				sparsity_ratio=sparsity_ratio,
-				quantize_weight=quantize_weight,
-				bitwidth=bitwidth,
-				tiled_weight_quantization=weight_tiled_quantization,
-				weight_tile_size=weight_tile_size,
-				slim_quant=slim_quant,
 			)
 				
 		elif prune_method == "sparsegpt":
