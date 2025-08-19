@@ -766,7 +766,7 @@ def prune_pruner_zero_2(
 		
 		for j in range(nsamples):
 			with torch.no_grad():
-				outs[j] = layer(inps[j].unsqueeze(0), attention_mask=kwargs)[0]
+				outs[j] = layer(inps[j].unsqueeze(0), **kwargs)[0]
 		
 		for h in handles:
 			h.remove()
@@ -890,7 +890,7 @@ def prune_pruner_zero_2(
 		progress_bar.set_description(f"Layer {i} - Evaluating Output")
 		for j in range(nsamples):
 			with torch.no_grad():
-				outs[j] = layer(inps[j].unsqueeze(0), attention_mask=kwargs)[0]
+				outs[j] = layer(inps[j].unsqueeze(0), **kwargs)[0]
 		
 		layers[i] = layer
 		torch.cuda.empty_cache()
