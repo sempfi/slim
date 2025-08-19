@@ -556,6 +556,7 @@ def prune_pruner_zero(
 
         # if f"model.layers.{i}" in model.hf_device_map:
         #     dev = model.hf_device_map[f"model.layers.{i}"]
+		model = model.to(device)
         inps, outs = inps.to(device), outs.to(device)
         for key in kwargs:
         	if isinstance(kwargs[key], torch.Tensor):
