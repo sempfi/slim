@@ -670,8 +670,8 @@ def prune_gblm(
 	eval_zero_shot=False,	
 	gradient_path="/content/gradients/opt/gradients_aggregate_norm_l2_opt-125m.path",
 	device=torch.device("cuda:0"),
-	engine=GPTree.load_tree('./data/best_tree.json')
-
+	use_gradient_inv=True,
+	use_variant=True,
 ):
 	use_cache = model.config.use_cache 
 	model.config.use_cache = False
@@ -685,7 +685,7 @@ def prune_gblm(
 	)
 
 	with torch.no_grad():
-		inps, outs, kwargs = prepare_calibration_input(model, dataloader, nsamples)
+		inps, outs, kwargs = prepare_calibration_input(model, dataloader, nsamples, device)
 
 
 	with open(gradient_path, 'rb') as file:
@@ -740,7 +740,7 @@ def prune_gblm(
 			progress_bar.set_description(f"Layer {indexed_name} - Pruning and Quantizing")
 
 			W_metric = torch.abs(subset[name].weight.data) * torch.sqrt(wrapped_layers[name].scaler_row.reshape((1,-1)))
-			if not args.gradient_inv:
+			if not use_gradient_inv:
 				# small_value = torch.tensor(1e-8, dtype=gradients[indexed_name].dtype, device=gradients[indexed_name].device)
 				W_metric_grad = torch.abs(subset[name].weight.data)* torch.abs(gradients[indexed_name].to(device=W_metric.device))
 				W_metric = W_metric.to(dtype=torch.float32) + W_metric_grad.to(dtype=torch.float32)  #+ small_value)
@@ -759,7 +759,7 @@ def prune_gblm(
 			else:
 				sort_res = torch.sort(W_metric, dim=-1, stable=True)
 
-				if args.use_variant:
+				if use_variant:
 					# wanda variant 
 					tmp_metric = torch.cumsum(sort_res[0], dim=1)
 					sum_before = W_metric.sum(dim=1)
@@ -767,8 +767,8 @@ def prune_gblm(
 					alpha = 0.4
 					alpha_hist = [0., 0.8]
 					W_mask, cur_sparsity = return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before)
-					while (torch.abs(cur_sparsity - args.sparsity_ratio)>0.001) and (alpha_hist[1]-alpha_hist[0]>=0.001):
-						if cur_sparsity > args.sparsity_ratio:
+					while (torch.abs(cur_sparsity - sparsity_ratio)>0.001) and (alpha_hist[1]-alpha_hist[0]>=0.001):
+						if cur_sparsity > sparsity_ratio:
 							alpha_new = (alpha + alpha_hist[0]) / 2.0
 							alpha_hist[1] = alpha
 						else:
@@ -780,7 +780,7 @@ def prune_gblm(
 					print(f"alpha found {alpha} sparsity {cur_sparsity:.6f}")
 				else:
 					# unstructured pruning
-					indices = sort_res[1][:,:int(W_metric.shape[1]*args.sparsity_ratio)]
+					indices = sort_res[1][:,:int(W_metric.shape[1]*sparsity_ratio)]
 					W_mask.scatter_(1, indices, True)
 			
 			if lora_rank > 0.:
@@ -878,6 +878,7 @@ def prune_gblm(
 
 	model.config.use_cache = use_cache 
 	torch.cuda.empty_cache()
+
 
 
 def prune_pruner_zero_2(
