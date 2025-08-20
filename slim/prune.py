@@ -685,7 +685,7 @@ def prune_gblm(
 	)
 
 	with torch.no_grad():
-		inps, outs, kwargs = prepare_calibration_input(model, dataloader, nsamples, device)
+		inps, outs, kwargs = prepare_calibration_input(model, dataloader, nsamples)
 
 
 	with open(gradient_path, 'rb') as file:
