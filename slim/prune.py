@@ -728,7 +728,7 @@ def prune_gblm(
 		for name in wrapped_layers:
 			handles.append(subset[name].register_forward_hook(add_batch(name))) ## this is a important function.
 		
-		for j in range(args.nsamples):
+		for j in range(nsamples):
 			with torch.no_grad():
 				outs[j] = layer(inps[j].unsqueeze(0), **kwargs)[0]
 
