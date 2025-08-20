@@ -14,6 +14,14 @@ from .smooth import smooth_layer
 from huggingface_hub import hf_hub_download
 import numpy as np
 
+def return_given_alpha(alpha, sort_res, W_metric, tmp_metric, sum_before):
+    thres_cumsum = sum_before * alpha 
+    sort_mask = tmp_metric <= thres_cumsum.reshape((-1,1))
+    thres = torch.gather(sort_res[0], dim=1, index=sort_mask.sum(dim=1, keepdims=True)-1)
+    W_mask = (W_metric <= thres)
+    cur_sparsity = (W_mask==True).sum() / W_mask.numel()
+    return W_mask, cur_sparsity
+
 
 def prepare_calibration_input(
 		model,
